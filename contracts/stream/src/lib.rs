@@ -43,6 +43,25 @@ impl SoroStreamContract {
         Ok(())
     }
 
+    /// Pauses the contract. Only the admin may call this.
+    pub fn pause(env: Env) -> Result<(), StreamError> {
+        check_admin(&env);
+        set_paused(&env, true);
+        Ok(())
+    }
+
+    /// Unpauses the contract. Only the admin may call this.
+    pub fn unpause(env: Env) -> Result<(), StreamError> {
+        check_admin(&env);
+        set_paused(&env, false);
+        Ok(())
+    }
+
+    /// Returns whether the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
+    }
+
     /// Upgrades the contract WASM bytecode. Only the admin may call this.
     /// All existing storage (streams, indices, counters) is preserved.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), StreamError> {

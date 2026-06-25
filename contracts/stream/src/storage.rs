@@ -3,6 +3,7 @@ use soroban_sdk::{Address, Env, Symbol, Vec};
 
 const STREAM_ID_KEY: &str = "next_id";
 const ADMIN_KEY: &str = "admin";
+const PAUSED_KEY: &str = "paused";
 
 /// Stores the contract admin address.
 pub fn write_admin(env: &Env, admin: &Address) {
@@ -114,4 +115,19 @@ pub fn nonce_used(env: &Env, sender: &Address, nonce: u64) -> bool {
 pub fn mark_nonce_used(env: &Env, sender: &Address, nonce: u64) {
     let key = (Symbol::new(env, "n"), sender.clone(), nonce);
     env.storage().persistent().set(&key, &true);
+}
+
+/// Returns whether the contract is currently paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&Symbol::new(env, PAUSED_KEY))
+        .unwrap_or(false)
+}
+
+/// Sets the paused state.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage()
+        .instance()
+        .set(&Symbol::new(env, PAUSED_KEY), &paused);
 }
