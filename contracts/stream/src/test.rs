@@ -195,3 +195,45 @@ fn test_get_claimable_calculates_correctly() {
     let claimable = c.get_claimable(&stream_id);
     assert_eq!(claimable, 25_000);
 }
+
+#[test]
+fn test_get_active_streams_by_sender_excludes_cancelled() {
+    let t = setup();
+    let c = client(&t);
+    t.env.ledger().set_timestamp(0);
+
+    let id0 = c.create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
+    let recipient2 = Address::generate(&t.env);
+    let id1 = c.create_stream(&t.sender, &recipient2, &t.token_id, &100_000, &1000, &false);
+
+    // Cancel the first stream
+    c.cancel_stream(&id0, &t.sender);
+
+    let active = c.get_active_streams_by_sender(&t.sender);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active.get(0).unwrap().id, id1);
+
+    let all = c.get_streams_by_sender(&t.sender);
+    assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn test_get_active_streams_by_recipient_excludes_completed() {
+    let t = setup();
+    let c = client(&t);
+    t.env.ledger().set_timestamp(0);
+
+    let id0 = c.create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
+    let id1 = c.create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
+
+    // Complete the first stream by withdrawing at end_time
+    t.env.ledger().set_timestamp(1000);
+    c.withdraw(&id0, &t.recipient);
+
+    let active = c.get_active_streams_by_recipient(&t.recipient);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active.get(0).unwrap().id, id1);
+
+    let all = c.get_streams_by_recipient(&t.recipient);
+    assert_eq!(all.len(), 2);
+}
