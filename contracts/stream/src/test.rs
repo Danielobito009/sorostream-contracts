@@ -2,10 +2,13 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, BytesN as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Bytes, Env,
 };
+
+const WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/release/sorostream_stream.wasm");
 
 struct TestEnv {
     env: Env,
@@ -21,14 +24,22 @@ fn setup() -> TestEnv {
 
     let contract_id = env.register(SoroStreamContract, ());
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
 
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
 
     StellarAssetClient::new(&env, &token_id).mint(&sender, &1_000_000);
 
-    TestEnv { env, contract_id, token_id, sender, recipient }
+    TestEnv {
+        env,
+        contract_id,
+        token_id,
+        sender,
+        recipient,
+    }
 }
 
 fn client(t: &TestEnv) -> SoroStreamContractClient {
@@ -126,7 +137,9 @@ fn test_auto_renew_restarts_on_completion() {
 
     let contract_id = env.register(SoroStreamContract, ());
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
 

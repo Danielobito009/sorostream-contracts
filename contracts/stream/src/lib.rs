@@ -9,9 +9,7 @@ mod types;
 mod test;
 
 use errors::StreamError;
-use soroban_sdk::{
-    contract, contractimpl, token, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
 use storage::{
     get_ids_by_recipient, get_ids_by_sender, index_by_recipient, index_by_sender,
     load_stream, mark_nonce_used, next_stream_id, nonce_used, save_stream,
@@ -23,6 +21,25 @@ pub struct SoroStreamContract;
 
 #[contractimpl]
 impl SoroStreamContract {
+    /// Initialises the contract by setting the admin address.
+    /// Can only be called once; reverts if already initialised.
+    pub fn initialize(env: Env, admin: Address) -> Result<(), StreamError> {
+        if get_admin(&env).is_some() {
+            return Err(StreamError::AlreadyInitialized);
+        }
+        set_admin(&env, &admin);
+        Ok(())
+    }
+
+    /// Upgrades the contract WASM bytecode. Only the admin may call this.
+    /// All existing storage (streams, indices, counters) is preserved.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), StreamError> {
+        let admin = get_admin(&env).ok_or(StreamError::NotInitialized)?;
+        admin.require_auth();
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
+    }
+
     /// Creates a new payment stream locking `amount` tokens for `recipient` over `duration_seconds`.
     ///
     /// # Arguments
@@ -70,7 +87,11 @@ impl SoroStreamContract {
         let cliff_time = now + cliff_seconds;
         let stream_id = next_stream_id(&env);
 
-        token::Client::new(&env, &token).transfer(&sender, &env.current_contract_address(), &amount);
+        token::Client::new(&env, &token).transfer(
+            &sender,
+            &env.current_contract_address(),
+            &amount,
+        );
 
         let stream = Stream {
             id: stream_id,
@@ -91,7 +112,9 @@ impl SoroStreamContract {
         index_by_sender(&env, &sender, stream_id);
         index_by_recipient(&env, &recipient, stream_id);
 
-        events::stream_created(&env, stream_id, &sender, &recipient, amount, flow_rate, end_time);
+        events::stream_created(
+            &env, stream_id, &sender, &recipient, amount, flow_rate, end_time,
+        );
 
         Ok(stream_id)
     }
@@ -126,8 +149,11 @@ impl SoroStreamContract {
         let claimable = stream.flow_rate * elapsed as i128;
 
         if claimable > 0 {
-            token::Client::new(&env, &stream.token)
-                .transfer(&env.current_contract_address(), &recipient, &claimable);
+            token::Client::new(&env, &stream.token).transfer(
+                &env.current_contract_address(),
+                &recipient,
+                &claimable,
+            );
         }
 
         stream.last_withdraw_time = effective_now;
@@ -187,7 +213,11 @@ impl SoroStreamContract {
         let token_client = token::Client::new(&env, &stream.token);
 
         if recipient_amount > 0 {
-            token_client.transfer(&env.current_contract_address(), &stream.recipient, &recipient_amount);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &stream.recipient,
+                &recipient_amount,
+            );
         }
         if refund_amount > 0 {
             token_client.transfer(&env.current_contract_address(), &sender, &refund_amount);
@@ -311,7 +341,12 @@ impl SoroStreamContract {
     /// * `stream_id` - The stream to top up.
     /// * `sender` - Must match the stream's sender (auth required).
     /// * `amount` - Additional tokens to add (in stroops).
-    pub fn top_up(env: Env, stream_id: u64, sender: Address, amount: i128) -> Result<(), StreamError> {
+    pub fn top_up(
+        env: Env,
+        stream_id: u64,
+        sender: Address,
+        amount: i128,
+    ) -> Result<(), StreamError> {
         sender.require_auth();
 
         let mut stream = load_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
