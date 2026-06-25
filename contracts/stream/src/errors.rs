@@ -23,4 +23,6 @@ pub enum StreamError {
     AlreadyInitialized = 8,
     /// Contract has not been initialised yet.
     NotInitialized = 9,
+    /// Contract is paused; operation rejected.
+    ContractPaused = 10,
 }

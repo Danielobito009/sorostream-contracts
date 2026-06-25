@@ -364,3 +364,50 @@ fn test_admin_persists_across_calls() {
     c.create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
     assert_eq!(c.get_admin(), admin);
 }
+
+#[test]
+fn test_admin_can_pause_and_unpause() {
+    let t = setup();
+    let c = client(&t);
+    let admin = Address::generate(&t.env);
+    c.initialize(&admin);
+    assert!(!c.is_paused());
+    c.pause();
+    assert!(c.is_paused());
+    c.unpause();
+    assert!(!c.is_paused());
+}
+
+#[test]
+fn test_create_stream_blocked_when_paused() {
+    let t = setup();
+    let c = client(&t);
+    let admin = Address::generate(&t.env);
+    c.initialize(&admin);
+    c.pause();
+    let result = c.try_create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_stream_works_after_unpause() {
+    let t = setup();
+    let c = client(&t);
+    let admin = Address::generate(&t.env);
+    c.initialize(&admin);
+    c.pause();
+    c.unpause();
+    let stream_id = c.create_stream(&t.sender, &t.recipient, &t.token_id, &100_000, &1000, &false);
+    assert_eq!(stream_id, 0);
+}
+
+#[test]
+fn test_pause_rejected_for_non_admin() {
+    let t = setup();
+    let c = client(&t);
+    let admin = Address::generate(&t.env);
+    c.initialize(&admin);
+    t.env.set_auths(&[]);
+    assert!(c.try_pause().is_err());
+    assert!(c.try_unpause().is_err());
+}

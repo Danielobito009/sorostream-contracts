@@ -12,7 +12,7 @@ use errors::StreamError;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
 use storage::{
     check_admin, get_ids_by_recipient, get_ids_by_sender, index_by_recipient, index_by_sender,
-    load_stream, next_stream_id, read_admin, save_stream, write_admin,
+    is_paused, load_stream, next_stream_id, read_admin, save_stream, set_paused, write_admin,
 };
 use types::{Stream, StreamStatus};
 
@@ -41,6 +41,25 @@ impl SoroStreamContract {
         check_admin(&env);
         write_admin(&env, &new_admin);
         Ok(())
+    }
+
+    /// Pauses the contract. Only the admin may call this.
+    pub fn pause(env: Env) -> Result<(), StreamError> {
+        check_admin(&env);
+        set_paused(&env, true);
+        Ok(())
+    }
+
+    /// Unpauses the contract. Only the admin may call this.
+    pub fn unpause(env: Env) -> Result<(), StreamError> {
+        check_admin(&env);
+        set_paused(&env, false);
+        Ok(())
+    }
+
+    /// Returns whether the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
     }
 
     /// Upgrades the contract WASM bytecode. Only the admin may call this.
@@ -74,6 +93,10 @@ impl SoroStreamContract {
         auto_renew: bool,
     ) -> Result<u64, StreamError> {
         sender.require_auth();
+
+        if storage::is_paused(&env) {
+            return Err(StreamError::ContractPaused);
+        }
 
         if amount <= 0 {
             return Err(StreamError::ZeroAmount);
