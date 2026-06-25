@@ -24,17 +24,29 @@ impl SoroStreamContract {
     /// Initialises the contract by setting the admin address.
     /// Can only be called once; reverts if already initialised.
     pub fn initialize(env: Env, admin: Address) -> Result<(), StreamError> {
-        if get_admin(&env).is_some() {
+        if read_admin(&env).is_some() {
             return Err(StreamError::AlreadyInitialized);
         }
-        set_admin(&env, &admin);
+        write_admin(&env, &admin);
+        Ok(())
+    }
+
+    /// Returns the current admin address. Panics if not initialized.
+    pub fn get_admin(env: Env) -> Result<Address, StreamError> {
+        read_admin(&env).ok_or(StreamError::NotInitialized)
+    }
+
+    /// Transfers the admin role to `new_admin`. Only the current admin may call this.
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), StreamError> {
+        check_admin(&env);
+        write_admin(&env, &new_admin);
         Ok(())
     }
 
     /// Upgrades the contract WASM bytecode. Only the admin may call this.
     /// All existing storage (streams, indices, counters) is preserved.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), StreamError> {
-        let admin = get_admin(&env).ok_or(StreamError::NotInitialized)?;
+        let admin = read_admin(&env).ok_or(StreamError::NotInitialized)?;
         admin.require_auth();
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
