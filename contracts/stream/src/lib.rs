@@ -14,7 +14,7 @@ use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
 use storage::{
     check_admin, get_current_stream_id, get_ids_by_recipient, get_ids_by_sender,
     get_protocol_fee, get_treasury, index_by_recipient, index_by_sender, is_paused,
-    load_stream, mark_nonce_used, next_stream_id, nonce_used, read_admin, save_stream,
+    load_stream, mark_nonce_used, next_stream_id, nonce_used, read_admin, remove_stream, save_stream,
     set_paused, set_protocol_fee, set_treasury, write_admin,
 };
 use types::{Stats, Stream, StreamStatus};
@@ -111,9 +111,6 @@ impl SoroStreamContract {
         if amount <= 0 {
             return Err(StreamError::ZeroAmount);
         }
-        if duration_seconds == 0 {
-            return Err(StreamError::InvalidDuration);
-        }
         if cliff_seconds > duration_seconds {
             return Err(StreamError::InvalidCliff);
         }
@@ -121,8 +118,11 @@ impl SoroStreamContract {
         mark_nonce_used(&env, &sender, nonce);
 
         let now = env.ledger().timestamp();
+        let end_time = now.checked_add(duration_seconds).unwrap_or(0);
+        if end_time <= now {
+            return Err(StreamError::InvalidDuration);
+        }
         let flow_rate = amount / duration_seconds as i128;
-        let end_time = now + duration_seconds;
         let cliff_time = now + cliff_seconds;
         let stream_id = next_stream_id(&env);
 
@@ -211,13 +211,14 @@ impl SoroStreamContract {
                 stream.start_time = stream.end_time;
                 stream.end_time = stream.start_time + duration;
                 stream.last_withdraw_time = stream.start_time;
+                save_stream(&env, &stream);
             } else {
-                stream.status = StreamStatus::Completed;
                 events::stream_completed(&env, stream_id);
+                remove_stream(&env, stream_id);
             }
+        } else {
+            save_stream(&env, &stream);
         }
-
-        save_stream(&env, &stream);
         events::stream_withdrawn(&env, stream_id, &recipient, claimable, now);
 
         Ok(())
@@ -385,6 +386,7 @@ impl SoroStreamContract {
         env: Env,
         stream_id: u64,
         sender: Address,
+        token: Address,
         amount: i128,
     ) -> Result<(), StreamError> {
         sender.require_auth();
@@ -393,6 +395,9 @@ impl SoroStreamContract {
 
         if stream.sender != sender {
             return Err(StreamError::NotSender);
+        }
+        if stream.token != token {
+            return Err(StreamError::TokenMismatch);
         }
         if stream.status != StreamStatus::Active {
             return Err(StreamError::StreamNotActive);
@@ -539,13 +544,17 @@ impl SoroStreamContract {
     ) -> Result<Vec<u64>, StreamError> {
         sender.require_auth();
 
-        if duration_seconds == 0 {
+        if recipients.len() != amounts.len() {
+            return Err(StreamError::BatchLengthMismatch);
+        }
+
+        let now = env.ledger().timestamp();
+        let end_time = now.checked_add(duration_seconds).unwrap_or(0);
+        if end_time <= now {
             return Err(StreamError::InvalidDuration);
         }
 
         let mut stream_ids = Vec::new(&env);
-        let now = env.ledger().timestamp();
-        let end_time = now + duration_seconds;
 
         let mut total_amount: i128 = 0;
         for amount in amounts.iter() {
@@ -651,13 +660,15 @@ impl SoroStreamContract {
                     stream.start_time = stream.end_time;
                     stream.end_time = stream.start_time + duration;
                     stream.last_withdraw_time = stream.start_time;
+                    save_stream(&env, &stream);
                 } else {
-                    stream.status = StreamStatus::Completed;
                     events::stream_completed(&env, stream_id);
+                    remove_stream(&env, stream_id);
                 }
+            } else {
+                save_stream(&env, &stream);
             }
 
-            save_stream(&env, &stream);
             amounts.push_back(claimable);
             events::stream_withdrawn(&env, stream_id, &recipient, claimable, now);
         }
